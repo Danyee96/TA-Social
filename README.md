@@ -45,7 +45,7 @@ In the old HTML dashboard, click **Export backup ↓**. In the new app, go to **
 | **Content Creator** | 40 | Adds posts, edits their own and assigned posts, checks off their own or unassigned posts, comments. |
 | **Viewer** | 10 | Read-only dashboard, calendar, reports and audience. |
 
-* Permissions are edited per role under **Roles & permissions**, using 19 granular switches. You can also create custom roles (e.g. *Video Editor*).
+* Permissions are edited per role under **Roles & permissions**. You can also create custom roles (e.g. *Video Editor*).
 * **Level rule:** a person can only manage users and roles with a *lower* level than their own.
 * Deactivating a user, resetting their password or changing their role signs them out of every device at once.
 * Removing a user keeps their posts. The posts become unassigned and the person's name is kept as the owner label.
@@ -62,6 +62,28 @@ Overview cards (combined audience, month completion, today's checklist, past due
 * A **"This week" planner** on the Overview, for the Monday "what's coming this week" check. It shows 7 day tiles with progress, past due, days off, the monthly items due, and how many posts aren't assigned yet. Click a tile to open that day.
 * The day view keeps the original column order **YouTube · X · IG / Facebook · TikTok**, and you can edit it.
 * Existing installs upgrade themselves on the first page load after you upload the new files. No reinstall is needed.
+
+## Connected social profiles
+
+Open **Socials → Link profile** as an Admin or Super Admin. Enter a public handle or profile URL for Instagram, YouTube, TikTok, X, or Facebook. Connected profiles appear in Socials and on the dashboard with followers or subscribers, recent growth, and supported post, like, and view counts. These are public counts reported by the provider. Manual counts remain available on the Audience page.
+
+Set the server environment variable `TA_SOCIAL_APIFY_TOKEN` or add an `apify` section to your private `config.php`:
+
+```php
+'apify' => [
+    'token' => 'YOUR_APIFY_API_TOKEN',
+    'refresh_hours' => 24,
+    'max_run_cost_usd' => 0.05,
+],
+```
+
+The sync requires PHP cURL, Apify credits, and actor access. Schedule the CLI worker every five minutes for unattended syncs:
+
+```cron
+*/5 * * * * php /absolute/path/to/public_html/scripts/sync-social.php
+```
+
+The worker starts due jobs and collects completed results. Admins can start a manual sync once per hour per profile. Unlinking a profile hides it and keeps its snapshots for later relinking. Keep the Apify token in server configuration.
 
 ## Added
 * **Logins, roles and permissions.** There is a Super Admin, Admins manage the team, and custom roles are possible.

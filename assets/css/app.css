@@ -218,3 +218,11 @@ button.primary:hover:not(:disabled), .btnlink.primary:hover {
 .nav .navsec {
   color: var(--muted);
 }
+
+.socialcards { margin-top: 16px; }
+.socialcards .card { min-width: 0; overflow-wrap: anywhere; }
+.socialcards h3 { margin-top: 10px; }
+.socialmetrics { display: flex; flex-wrap: wrap; gap: 10px 18px; margin: 16px 0 0; }
+.socialmetrics dt { color: var(--muted); font-size: 11px; }
+.socialmetrics dd { margin: 3px 0 0; font-weight: 700; }
+@media (max-width: 520px) { .socialcards { grid-template-columns: 1fr; } }

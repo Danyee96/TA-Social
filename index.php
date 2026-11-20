@@ -51,7 +51,7 @@ $ws = setting('workspace_name', 'TA Toolkit');
     </div>
   </header>
   <section id="view" aria-live="polite"><div class="empty">Loading…</div></section>
-  <div class="footnote">Everything is saved to the shared workspace database — the whole team sees the same calendar. Audience counts are entered manually; platform accounts are not connected.</div>
+  <div class="footnote">Everything is saved to the shared workspace database. The whole team sees the same calendar.</div>
 </main>
 <div id="dialogs"></div>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>

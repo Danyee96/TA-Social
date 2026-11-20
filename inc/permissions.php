@@ -24,6 +24,7 @@ const PERMISSIONS = [
     'Audience' => [
         'metrics.view'     => 'View audience counts and growth',
         'metrics.update'   => 'Update audience counts',
+        'socials.manage'   => 'Link, remove and refresh connected social profiles',
     ],
     'Administration' => [
         'users.view'       => 'View the team list',

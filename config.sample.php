@@ -17,6 +17,11 @@ return [
         // Only used when driver = sqlite
         'sqlite_path' => __DIR__ . '/storage/app.sqlite',
     ],
+    'apify' => [
+        'token' => getenv('TA_SOCIAL_APIFY_TOKEN') ?: '',
+        'refresh_hours' => 24,
+        'max_run_cost_usd' => 0.05,
+    ],
     'app' => [
         'name'     => 'TA Toolkit · Social Command',
         // Server timezone for timestamps (activity log, "published at")

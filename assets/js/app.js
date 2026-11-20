@@ -120,6 +120,7 @@ const PAGES = {
   tracking: { label: 'Content tracking', ic: '▦', perm: 'content.view', title: 'Our content. Our calendar.', sub: 'Every platform, every post, one checklist.' },
   mine: { label: 'My work', ic: '✓', perm: 'content.view', title: 'My work.', sub: 'Everything assigned to you — overdue first.' },
   reports: { label: 'Reports', ic: '◔', perm: 'reports.view', title: 'How we\'re doing.', sub: 'Completion, consistency and team performance by month.' },
+  socials: { label: 'Socials', ic: '◎', perm: ['metrics.view', 'socials.manage'], title: 'Socials', sub: 'Public profile analytics and audience growth.' },
   audience: { label: 'Audience', ic: '↗', perm: 'metrics.view', title: 'Our audience.', sub: 'Manual follower snapshots and growth over time.' },
   sec: { section: 'Workspace' },
   team: { label: 'Team', ic: '☺', perm: 'users.view', title: 'Our team.', sub: 'Who has access, and what they can do.' },
@@ -161,7 +162,7 @@ async function render() {
   document.title = `${v.label} · ${S.workspace.name} · Social Command`;
   renderNav();
   try {
-    await ({ overview: renderOverview, tracking: renderTracking, mine: renderMine, reports: renderReports, audience: renderAudience, team: renderTeam,
+    await ({ overview: renderOverview, tracking: renderTracking, mine: renderMine, reports: renderReports, socials: renderSocials, audience: renderAudience, team: renderTeam,
       roles: renderRoles, platforms: renderPlatforms, activity: renderActivity, data: renderData, profile: renderProfile })[S.page]();
   } catch (e) {
     $('#view').innerHTML = `<div class="notice warn">Couldn't load this page: ${esc(e.message)} <button onclick="render()">Retry</button></div>`;
@@ -202,13 +203,15 @@ async function renderOverview() {
   <div class="row between" style="margin-bottom:18px"><h2>Our publishing performance <span class="weeklabel">${period()}</span></h2>
     <div class="row"><button id="pm" aria-label="Previous month">←</button><button id="nm" aria-label="Next month">→</button>${can('content.view') ? '<button id="jump">Open calendar →</button>' : ''}</div></div>
   <div class="cards">
-    <div class="card"><div class="muted">Combined audience</div><div class="big">${known.length ? known.reduce((a, b) => a + Number(b), 0).toLocaleString() : '—'}</div><div class="statline">${known.length} / ${activePlatforms().length} platforms updated · not unique people</div></div>
+    <div class="card"><div class="muted">Combined manual audience</div><div class="big">${known.length ? known.reduce((a, b) => a + Number(b), 0).toLocaleString() : '—'}</div><div class="statline">${known.length} / ${activePlatforms().length} platforms updated · not unique people</div></div>
     <div class="card"><div class="muted">Month completion</div><div class="big accent">${pct(ts)}%</div><div class="statline">${count(ts)} of ${ts.length} posts published</div>${progress(ts)}</div>
     <div class="card"><div class="muted">Today’s checklist</div><div class="big">${count(tod)} <span class="muted" style="font-size:20px">/ ${tod.length}</span></div><div class="statline">${tod.length - count(tod)} posts left today · ${d.upcoming_count} open in the next 7 days</div></div>
     <div class="card"><div class="muted">Past due</div><div class="big ${d.pastdue_count ? 'overdue' : ''}">${d.pastdue_count}</div><div class="statline">Uncompleted posts before today</div></div>
   </div>
   ${weekPlanHTML(d.week)}
-  <div class="section row between" style="margin-bottom:16px"><h2>Our Toolkit socials</h2>${can('metrics.update') ? '<button id="metrics">Update audience counts</button>' : ''}</div>
+  ${canViewSocials() ? `<section class="section"><div class="row between"><h2>Connected social analytics</h2><button id="go-socials">${can('socials.manage') ? 'Manage profiles' : 'View Socials'} →</button></div>
+    ${d.socials.length ? socialCards(d.socials) : '<p class="muted">No social profiles linked yet.</p>'}</section>` : ''}
+  <div class="section row between" style="margin-bottom:16px"><h2>Publishing platforms and manual counts</h2>${can('metrics.update') ? '<button id="metrics">Update audience counts</button>' : ''}</div>
   <div class="platforms">${plats.map(p => {
     const a = ts.filter(t => t.platform_id === p.id), now = m ? m.current[p.id] : null, prev = m ? m.previous[p.id] : null;
     const delta = prev != null && now != null ? Number(now) - Number(prev) : null;
@@ -229,11 +232,12 @@ async function renderOverview() {
       <div class="checklist" id="duelist">${d.pastdue.length ? d.pastdue.map(t => taskHTML(t, { showDate: true })).join('') : '<div class="empty">Nothing past due. Nice work.</div>'}</div></div>
   </div>
   ${d.activity.length ? `<div class="section card"><div class="row between"><h2>Recent activity</h2><button id="goact">Full log →</button></div><div class="list" style="margin-top:10px">${d.activity.map(activityLine).join('')}</div></div>` : ''}
-  <div class="notice">Audience figures are manual snapshots${m && m.updated ? ' · Last updated ' + pretty(m.updated) : ' · Add our current counts to start tracking growth'}. No sample follower numbers or pretend analytics.</div>`;
+  `;
   $('#pm').onclick = () => { S.current.setMonth(S.current.getMonth() - 1); render(); };
   $('#nm').onclick = () => { S.current.setMonth(S.current.getMonth() + 1); render(); };
   $('#jump') && ($('#jump').onclick = () => go('tracking'));
   $('#metrics') && ($('#metrics').onclick = openMetrics);
+  $('#go-socials') && ($('#go-socials').onclick = () => go('socials'));
   $('#build') && ($('#build').onclick = () => { go('tracking'); openPlan(); });
   $('#todaybutton') && ($('#todaybutton').onclick = () => { S.current = new Date(today + 'T12:00:00'); S.current.setDate(1); S.expanded = today; go('tracking'); });
   $('#gomine').onclick = () => go('mine');
@@ -610,6 +614,72 @@ function growthHTML(m) {
       ${sparkline(s, p.color)}</div>`;
   }).join('')}</div>`;
 }
+const canViewSocials = () => can('metrics.view') || can('socials.manage');
+
+function socialCards(accounts, manage = false, configured = false) {
+  return `<div class="platforms socialcards">${accounts.map(a => {
+    const status = !configured && manage ? 'Setup required' :
+      ({pending:'Awaiting sync', syncing:'Syncing', ready:a.stale ? 'Update due' : 'Up to date', error:'Sync error'}[a.status] || 'Awaiting sync');
+    const secondary = [['Posts / videos', a.posts], ['Likes', a.likes], ['Views', a.views]]
+      .filter(([, value]) => value != null);
+    return `<article class="card" ${configured && a.status === 'syncing' ? 'data-social-syncing' : ''}>
+      <div class="row between"><span class="eyebrow">${esc(a.label)}</span><a href="${esc(a.url)}" target="_blank" rel="noopener noreferrer">Public profile ↗</a></div>
+      <h3>${esc(a.name || '@' + a.handle)}</h3>
+      <div class="big">${metricNumber(a.followers)}</div>
+      <div class="muted small">${esc(a.metric)}${a.growth == null ? '' : ` · <span class="${a.growth >= 0 ? 'accent' : 'overdue'}">${a.growth >= 0 ? '+' : ''}${metricNumber(a.growth)}</span> over the last 30 days`}</div>
+      ${a.history.length >= 2 ? sparkline(a.history.map(day => [day.date, day.followers]), '#04e7d4') : ''}
+      ${secondary.length ? `<dl class="socialmetrics">${secondary.map(([label, value]) => `<div><dt>${label}</dt><dd>${metricNumber(value)}</dd></div>`).join('')}</dl>` : ''}
+      <p class="muted small">${a.last_synced ? 'Captured ' + esc(a.last_synced) : 'No snapshot yet'} · ${status}</p>
+      ${manage && a.error ? `<p class="overdue small">${esc(a.error)}</p>` : ''}
+      ${manage ? `<div class="row">
+        <button data-social-refresh="${a.id}" ${!configured || !a.can_refresh ? 'disabled' : ''}>Sync now</button>
+        <button class="danger" data-social-remove="${a.id}">Unlink</button>
+      </div>` : ''}
+    </article>`;
+  }).join('')}</div>`;
+}
+
+async function renderSocials() {
+  const d = await get('socials.list');
+  if (S.page !== 'socials') return;
+  const manage = can('socials.manage');
+  $('#view').innerHTML = `
+    <div class="row between"><h2>Connected profiles</h2>${manage ? '<button class="primary" id="link-social">Link profile</button>' : ''}</div>
+    ${!d.configured && manage ? '<p class="notice">Set the Apify token on the server to enable automatic sync. You can link profiles now.</p>' : ''}
+    ${d.accounts.length ? socialCards(d.accounts, manage, d.configured) : '<p class="empty">No social profiles linked yet.</p>'}`;
+  if (!manage) return;
+
+  $('#link-social').onclick = () => {
+    const dialog = openDialog(`<form><div class="dlghead"><h2>Link a social profile</h2>
+      <button type="button" class="iconbtn" data-close aria-label="Close">✕</button></div>
+      <label for="social-platform">Platform</label><select id="social-platform" name="platform">${Object.entries(d.platforms).map(([key, label]) => `<option value="${esc(key)}">${esc(label)}</option>`).join('')}</select>
+      <label for="social-profile">Public profile URL or handle</label>
+      <input id="social-profile" name="profile" required maxlength="1500" placeholder="@handle" autocomplete="off">
+      <div class="actions"><button type="button" data-close>Cancel</button><button class="primary" type="submit">Link profile</button></div></form>`);
+    const form = $('form', dialog);
+    form.onsubmit = async e => {
+      e.preventDefault();
+      const submit = $('button[type=submit]', form);
+      submit.disabled = true;
+      if (await act('socials.add', Object.fromEntries(new FormData(form)), 'Profile linked')) {
+        dialog.close();
+        refresh();
+      } else {
+        submit.disabled = false;
+      }
+    };
+  };
+  $$('[data-social-refresh]').forEach(button => button.onclick = async () => {
+    button.disabled = true;
+    if (await act('socials.refresh', {id: Number(button.dataset.socialRefresh)})) refresh();
+    else button.disabled = false;
+  });
+  $$('[data-social-remove]').forEach(button => button.onclick = async () => {
+    if (!await confirmBox('Unlink profile?', 'The profile will be removed from analytics. Linking it again restores its saved history.', 'Unlink')) return;
+    if (await act('socials.remove', {id: Number(button.dataset.socialRemove)}, 'Profile unlinked')) refresh();
+  });
+}
+
 async function renderAudience() {
   const m = await get('metrics.get');
   S.metrics = m;
@@ -917,10 +987,23 @@ setInterval(() => {
   const newToday = localDate(new Date());
   if (newToday !== today) today = newToday;
   if (document.visibilityState === 'visible' && !document.querySelector('dialog[open]') && !S.busy && !$('.searchresults')
-    && ['overview', 'tracking', 'mine'].includes(S.page) && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) {
+    && ['overview', 'tracking', 'mine', 'socials'].includes(S.page) && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) {
     const y = window.scrollY; render().then(() => window.scrollTo(0, y));
   }
 }, 60000);
+
+// Collect jobs already started by a profile link or manual refresh.
+setInterval(async () => {
+  if (S.page !== 'socials' || !can('socials.manage') || S.busy ||
+      document.visibilityState !== 'visible' || $('dialog[open]') ||
+      !$('[data-social-syncing]')) return;
+  try {
+    await post('socials.poll');
+    if (S.page === 'socials' && !$('dialog[open]')) await render();
+  } catch (e) {
+    // The next poll or cron pass can retry.
+  }
+}, 15000);
 
 (async function boot() {
   try {

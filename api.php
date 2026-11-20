@@ -212,6 +212,7 @@ $routes['overview'] = function () {
         'mine' => posts_where('p.done = 0 AND p.assignee_id = ? AND p.post_date <= ?', [myid(), $week], 'p.post_date, p.id', 'LIMIT 12'),
         'upcoming_count' => (int)db_val('SELECT COUNT(*) FROM posts WHERE done = 0 AND post_date > ? AND post_date <= ?', [$today, $week]),
         'metrics' => $metrics,
+        'socials' => (can('metrics.view') || can('socials.manage')) ? social_dashboard_data() : [],
         'activity' => can('activity.view') ? activity_rows(8, 0, []) : [],
         'week' => (function () use ($today) {
             [$ws, $we] = week_bounds($today);
@@ -706,6 +707,93 @@ $routes['metrics.delete'] = function () {
     db_exec('DELETE FROM metric_batches WHERE id = ?', [$id]);
     log_activity('metrics.delete', 'metrics', $id, 'Deleted an audience snapshot');
     return metrics_summary();
+};
+
+/* ===== connected social profiles ===== */
+
+$routes['socials.list'] = function () {
+    if (!can('metrics.view') && !can('socials.manage')) fail('No access.', 403);
+    return [
+        'accounts' => social_dashboard_data(),
+        'configured' => social_enabled(),
+        'platforms' => array_map(fn($platform) => $platform['label'], SOCIAL_PLATFORMS),
+    ];
+};
+
+$routes['socials.add'] = function () {
+    require_write();
+    need('socials.manage');
+    $platform = str_in('platform', 20);
+    try {
+        $identity = social_identity($platform, str_in('profile', 1500));
+    } catch (InvalidArgumentException $e) {
+        fail($e->getMessage());
+    }
+
+    $key = hash('sha256', $platform . ':' . $identity['handle']);
+    $existing = db_one('SELECT id, is_active, run_id FROM social_accounts WHERE identity_key=?', [$key]);
+    if ($existing) {
+        $id = (int)$existing['id'];
+        $status = $existing['run_id'] ? 'syncing' : 'pending';
+        if (!db_exec('UPDATE social_accounts SET is_active=1, sync_status=?, next_sync=NULL, last_error=NULL WHERE id=? AND is_active=0', [$status, $id])) {
+            fail('This profile is already linked.', 409);
+        }
+    } else {
+        try {
+            $id = db_insert('social_accounts', $identity + ['platform'=>$platform, 'identity_key'=>$key, 'created_at'=>now()]);
+        } catch (PDOException $e) {
+            if ((string)$e->getCode() === '23000') fail('This profile is already linked.', 409);
+            throw $e;
+        }
+    }
+    log_activity('social.link', 'social', $id, 'Linked ' . SOCIAL_PLATFORMS[$platform]['label'] . ' · ' . $identity['handle']);
+    if (social_enabled()) social_start($id);
+    return ['id'=>$id];
+};
+
+$routes['socials.remove'] = function () {
+    require_write();
+    need('socials.manage');
+    $id = (int)in('id');
+    if (!db_exec("UPDATE social_accounts SET is_active=0, sync_status='archived'
+        WHERE id=? AND is_active=1 AND (locked_until IS NULL OR locked_until<?)", [$id, now()])) {
+        if (db_val('SELECT id FROM social_accounts WHERE id=? AND is_active=1', [$id])) {
+            fail('A sync request is in progress. Try again shortly.', 409);
+        }
+        fail('Profile not found.', 404);
+    }
+    log_activity('social.remove', 'social', $id, 'Unlinked a social profile');
+    return [];
+};
+
+$routes['socials.refresh'] = function () {
+    require_write();
+    need('socials.manage');
+    if (!social_enabled()) fail('Configure the Apify token to sync stats.', 503);
+    $id = (int)in('id');
+    $account = db_one('SELECT run_id, last_attempt FROM social_accounts WHERE id=? AND is_active=1', [$id]);
+    if (!$account) fail('Profile not found.', 404);
+    if ($account['run_id']) {
+        social_collect($id);
+    } elseif ($account['last_attempt'] && strtotime($account['last_attempt']) > time()-3600) {
+        fail('This profile can start one sync per hour.', 429);
+    } else {
+        social_start($id);
+    }
+    return [];
+};
+
+/** Collect one already-started run per browser poll. Starting due runs belongs to cron. */
+$routes['socials.poll'] = function () {
+    require_write();
+    need('socials.manage');
+    if (social_enabled()) {
+        $account = db_one("SELECT id FROM social_accounts WHERE is_active=1 AND sync_status='syncing'
+            AND run_id IS NOT NULL AND (locked_until IS NULL OR locked_until<?)
+            ORDER BY id LIMIT 1", [now()]);
+        if ($account) social_collect((int)$account['id']);
+    }
+    return [];
 };
 
 /* ===== reports ===== */

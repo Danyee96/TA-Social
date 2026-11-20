@@ -5,7 +5,9 @@
  */
 declare(strict_types=1);
 
-const SCHEMA_VERSION = 2;
+require_once __DIR__ . '/social.php';
+
+const SCHEMA_VERSION = 3;
 
 /** Upgrades an existing install in place (run automatically on first request after an update). */
 function migrate(): void
@@ -21,6 +23,11 @@ function migrate(): void
         db()->exec("CREATE TABLE days_off (off_date DATE NOT NULL PRIMARY KEY, reason VARCHAR(120) NOT NULL DEFAULT '', created_by $int NULL, created_at DATETIME NOT NULL)$tail");
         db_exec("UPDATE slot_templates SET days = '1,2,3,4,5' WHERE type = 'Long form · Chart breakdown'");
         if (setting('group_order') === null) set_setting('group_order', json_encode(['YouTube', 'X', 'IG / Facebook', 'TikTok']));
+    }
+    if ($v < 3) {
+        foreach (social_schema($d === 'sqlite') as $sql) db()->exec($sql);
+        $insert = $d === 'sqlite' ? 'INSERT OR IGNORE' : 'INSERT IGNORE';
+        db_exec("$insert INTO role_permissions (role_id, permission) SELECT id, ? FROM roles WHERE slug = 'admin'", ['socials.manage']);
     }
     set_setting('schema_version', (string)SCHEMA_VERSION);
 }
@@ -184,6 +191,7 @@ function schema_sql(string $driver): array
             skey VARCHAR(60) NOT NULL PRIMARY KEY,
             svalue $text NULL
         )$tail",
+        ...social_schema($driver === 'sqlite'),
     ];
 }
 
