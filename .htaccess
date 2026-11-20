@@ -1,0 +1,27 @@
+# TA Toolkit · Social Command — Apache / Hostinger (LiteSpeed) rules
+Options -Indexes
+DirectoryIndex index.php
+
+# Block direct access to internals
+<FilesMatch "^(config\.php|config\.sample\.php|README\.md|\.env|.*\.sqlite.*|.*\.lock)$">
+  Require all denied
+</FilesMatch>
+RedirectMatch 403 ^/(.*/)?(inc|storage)/
+
+<IfModule mod_headers.c>
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set X-Frame-Options "SAMEORIGIN"
+  Header always set Referrer-Policy "same-origin"
+</IfModule>
+
+# Cache static assets (filenames are versioned with ?v=)
+<IfModule mod_expires.c>
+  ExpiresActive On
+  ExpiresByType text/css "access plus 30 days"
+  ExpiresByType application/javascript "access plus 30 days"
+</IfModule>
+
+# Uncomment to force HTTPS once SSL is active on the domain
+# RewriteEngine On
+# RewriteCond %{HTTPS} off
+# RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]

@@ -1,0 +1,4 @@
+config.php
+storage/*.sqlite*
+storage/installed.lock
+.DS_Store

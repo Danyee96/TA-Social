@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 140 80">
+  <defs>
+<linearGradient id="taMetal" x1="0" y1="0" x2=".4" y2="1">
+                <stop stop-color="#fff"/>
+                <stop offset=".42" stop-color="#e8eef4"/>
+                <stop offset=".8" stop-color="#8698a7"/>
+                <stop offset="1" stop-color="#f5f8fa"/>
+            </linearGradient>
+            <linearGradient id="taAqua" x1="0" y1="0" x2="1" y2="1">
+                <stop stop-color="#21ffe0"/>
+                <stop offset="1" stop-color="#008c83"/>
+            </linearGradient>
+  </defs>
+                <path fill="url(#taMetal)" d="M3 10H76L65 25H43V72H26V25H8Z"/>
+                <path fill="url(#taMetal)" d="M78 10H99L138 72H114L89 31L59 72H37Z"/>
+                <path fill="url(#taAqua)" d="M88 44L106 72H69Z"/>
+</svg>
