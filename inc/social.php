@@ -5,7 +5,7 @@ const SOCIAL_PLATFORMS = [
     'instagram' => ['label' => 'Instagram', 'actor' => 'apify~instagram-profile-scraper', 'metric' => 'Followers'],
     'youtube' => ['label' => 'YouTube', 'actor' => 'streamers~youtube-channel-scraper', 'metric' => 'Subscribers'],
     'tiktok' => ['label' => 'TikTok', 'actor' => 'clockworks~tiktok-profile-scraper', 'metric' => 'Followers'],
-    'x' => ['label'=>'X (Twitter)', 'actor'=>'apidojo~twitter-user-scraper', 'metric'=>'Followers'],
+    'x' => ['label'=>'X (Twitter)', 'actor'=>'socialscrapers~x-profile-scraper', 'metric'=>'Followers'],
     'facebook' => ['label' => 'Facebook', 'actor' => 'apify~facebook-pages-scraper', 'metric' => 'Followers'],
 ];
 
@@ -151,7 +151,7 @@ function social_connect_provider(string $token): void
 function social_actor_input(array $account): array
 {
     return match ($account['platform']) {
-        'x' => ['twitterHandles'=>[$account['handle']], 'getFollowers'=>false, 'getFollowing'=>false, 'getRetweeters'=>false, 'getAbout'=>false, 'maxItems'=>1],
+        'x' => ['handles'=>[$account['handle']], 'maxTweetsPerProfile'=>0],
         'instagram' => ['usernames'=>[$account['handle']]],
         'tiktok' => ['profiles'=>[$account['handle']], 'resultsPerPage'=>1, 'shouldDownloadVideos'=>false, 'shouldDownloadCovers'=>false, 'shouldDownloadSlideshowImages'=>false, 'shouldDownloadSubtitles'=>false],
         'youtube' => ['startUrls'=>[['url'=>$account['profile_url']]], 'maxResults'=>1, 'maxResultsShorts'=>0, 'maxResultStreams'=>0],
@@ -173,11 +173,11 @@ function social_count(mixed $raw): ?int
 function social_parse(array $account, array $rows): array
 {
     foreach ($rows as $row) {
-        if (!is_array($row) || !empty($row['error']) || !empty($row['errorCode'])) continue;
+        if (!is_array($row) || !empty($row['error']) || !empty($row['errorCode']) || !empty($row['demo'])) continue;
         $p = $account['platform'];
         $data = match ($p) { 'tiktok'=>$row['authorMeta'] ?? $row, 'youtube'=>$row['aboutChannelInfo'] ?? $row, default=>$row };
         $identity = match ($p) {
-            'x'=>$data['userName'] ?? '',
+            'x'=>$data['handle'] ?? $data['userName'] ?? '',
             'instagram'=>$data['username'] ?? '', 'tiktok'=>$data['name'] ?? $data['uniqueId'] ?? '',
             'youtube'=>str_contains($account['profile_url'], '/channel/') ? ($data['channelId'] ?? $row['channelId'] ?? '') : ($data['channelUsername'] ?? $row['channelUsername'] ?? ''),
             'facebook'=>ctype_digit($account['handle']) ? (string)($data['pageId'] ?? $data['facebookId'] ?? '') : ($data['pageName'] ?? ''),
@@ -186,14 +186,14 @@ function social_parse(array $account, array $rows): array
         $isChannelId = $p === 'youtube' && str_contains($account['profile_url'], '/channel/');
         if ($isChannelId ? $identity !== $account['handle'] : mb_strtolower($identity) !== mb_strtolower($account['handle'])) continue;
         $followers = social_count(match ($p) {
-            'x'=>$data['followers'] ?? null,
+            'x'=>$data['followersCount'] ?? $data['followers'] ?? null,
             'instagram'=>$data['followersCount'] ?? null, 'tiktok'=>$data['fans'] ?? $data['followerCount'] ?? null,
             'youtube'=>$data['numberOfSubscribers'] ?? $row['numberOfSubscribers'] ?? null, 'facebook'=>$data['followers'] ?? null,
         });
         if ($followers === null) continue;
         return [
             'followers'=>$followers,
-            'posts'=>social_count(match ($p) { 'x'=>$data['statusesCount'] ?? null, 'instagram'=>$data['postsCount'] ?? null, 'tiktok'=>$data['video'] ?? $data['videoCount'] ?? null, 'youtube'=>$data['channelTotalVideos'] ?? null, default=>null }),
+            'posts'=>social_count(match ($p) { 'x'=>$data['tweetsCount'] ?? $data['statusesCount'] ?? null, 'instagram'=>$data['postsCount'] ?? null, 'tiktok'=>$data['video'] ?? $data['videoCount'] ?? null, 'youtube'=>$data['channelTotalVideos'] ?? null, default=>null }),
             'likes'=>social_count(match ($p) { 'tiktok'=>$data['heart'] ?? $data['heartCount'] ?? null, 'facebook'=>$data['likes'] ?? null, default=>null }),
             'views'=>$p === 'youtube' ? social_count($data['channelTotalViews'] ?? null) : null,
             'display_name'=>mb_substr((string)match ($p) { 'x'=>$data['name'] ?? $identity, 'instagram'=>$data['fullName'] ?? $identity, 'tiktok'=>$data['nickName'] ?? $identity, 'youtube'=>$data['channelName'] ?? $row['channelName'] ?? $identity, 'facebook'=>$data['title'] ?? $identity }, 0, 255),
