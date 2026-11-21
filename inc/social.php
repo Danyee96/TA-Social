@@ -250,14 +250,13 @@ function social_fail(int $id, string $message, bool $clearRun = true): void
 }
 
 /** One bounded provider call to start a background run; no long-running web requests. */
-function social_start(int $id): void
+function social_start(int $id, bool $manual = false): void
 {
     $account = social_claim($id);
     if (!$account) return;
     try {
         if ($account['run_id']) return;
-        // An hourly minimum also protects manual refreshes from duplicate charges.
-        if ($account['last_attempt'] && strtotime($account['last_attempt']) > time() - 3600) return;
+        if (!$manual && $account['last_attempt'] && strtotime($account['last_attempt']) > time() - 3600) return;
         db_exec('UPDATE social_accounts SET last_attempt=?, next_sync=? WHERE id=?', [now(), social_time(social_interval()), $id]);
         $data = apify_request('POST', '/acts/' . SOCIAL_PLATFORMS[$account['platform']]['actor'] . '/runs', social_actor_input($account), [
             'timeout'=>180, 'maxItems'=>$account['platform'] === 'youtube' ? SOCIAL_FEED_BATCH : 1,
@@ -367,7 +366,6 @@ function social_dashboard_data(): array
             'name'=>$a['display_name'], 'status'=>$a['sync_status'], 'last_synced'=>$a['last_synced'],
             'stale'=>$a['last_synced'] && strtotime($a['last_synced']) < time()-social_interval(),
             'error'=>$a['last_error'],
-            'can_refresh'=>$a['run_id'] ? $a['sync_status'] === 'error' : (!$a['last_attempt'] || strtotime($a['last_attempt']) <= time()-3600),
             'growth'=>count($days) >= 2 ? (int)$latest['followers'] - (int)$days[0]['followers'] : null,
             'history'=>array_map(fn($day)=>['date'=>$day['snapshot_date'], 'followers'=>(int)$day['followers']], $days),
         ];

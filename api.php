@@ -804,14 +804,12 @@ $routes['socials.refresh'] = function () {
     need('socials.manage');
     if (!social_enabled()) fail('Configure the Apify token to sync stats.', 503);
     $id = (int)in('id');
-    $account = db_one('SELECT run_id, last_attempt FROM social_accounts WHERE id=? AND is_active=1', [$id]);
+    $account = db_one('SELECT run_id FROM social_accounts WHERE id=? AND is_active=1', [$id]);
     if (!$account) fail('Profile not found.', 404);
     if ($account['run_id']) {
         social_collect($id);
-    } elseif ($account['last_attempt'] && strtotime($account['last_attempt']) > time()-3600) {
-        fail('This profile can start one sync per hour.', 429);
     } else {
-        social_start($id);
+        social_start($id, manual: true);
     }
     return [];
 };

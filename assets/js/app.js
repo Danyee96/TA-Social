@@ -815,7 +815,7 @@ function socialCards(accounts, manage = false, configured = false) {
       <p class="muted small">${a.last_synced ? 'Captured ' + esc(a.last_synced) : 'No snapshot yet'} · ${status}</p>
       ${manage && a.error ? `<p class="overdue small">${esc(a.error)}</p>` : ''}
       ${manage ? `<div class="row">
-        <button data-social-refresh="${a.id}" ${!configured || !a.can_refresh ? 'disabled' : ''}>Sync now</button>
+        <button data-social-refresh="${a.id}" ${!configured ? 'disabled' : ''}>Sync now</button>
         <button class="danger" data-social-remove="${a.id}">Unlink</button>
       </div>` : ''}
     </article>`;
