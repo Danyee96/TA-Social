@@ -670,7 +670,12 @@ function bindTodaySocialTabs(data) {
       tab.tabIndex = active ? 0 : -1;
     });
     panel.setAttribute('aria-labelledby', 'today-social-' + key);
-    panel.innerHTML = items.length || key === 'all' ? publishedCards(items) : `<p class="empty">No ${esc(platforms.get(key))} posts imported for today.</p>`;
+    const syncing = data.configured && data.accounts.some(account =>
+      platforms.has(account.platform) && (key === 'all' || key === account.platform) &&
+      ['pending', 'syncing'].includes(account.status));
+    panel.innerHTML = items.length ? publishedCards(items) : `<p class="empty">${syncing
+      ? 'Waiting for the social sync to finish.'
+      : key === 'all' ? 'No imported posts for this date.' : `No ${esc(platforms.get(key))} posts imported for today.`}</p>`;
     bindPublishedImages(panel);
     $$('[data-published-item]', panel).forEach(button => button.onclick = () => {
       const item = items[Number(button.dataset.publishedItem)];

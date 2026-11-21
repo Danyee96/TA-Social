@@ -7,7 +7,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/social.php';
 
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 7;
 
 /** Upgrades an existing install in place (run automatically on first request after an update). */
 function migrate(): void
@@ -32,7 +32,7 @@ function migrate(): void
     if ($v < 5) db()->exec(social_feed_schema($d === 'sqlite'));
     db()->exec(social_preview_schema($d === 'sqlite'));
     db_tx(function () use ($v) {
-        $changed = db_exec("UPDATE settings SET svalue=? WHERE skey='schema_version' AND svalue IN ('1','2','3','4','5')",
+        $changed = db_exec("UPDATE settings SET svalue=? WHERE skey='schema_version' AND svalue IN ('1','2','3','4','5','6')",
             [(string)SCHEMA_VERSION]);
         if (!$changed && setting('schema_version') === null) {
             set_setting('schema_version', (string)SCHEMA_VERSION);
@@ -44,8 +44,12 @@ function migrate(): void
                 WHERE platform='x' AND last_synced IS NULL AND run_id IS NULL
                 AND sync_status IN ('pending','error') AND (locked_until IS NULL OR locked_until<?)", [now()]);
         }
-        db_exec("UPDATE social_accounts SET next_sync=NULL WHERE platform IN (" . db_in(SOCIAL_FEED_PLATFORMS)
-            . ") AND is_active=1 AND run_id IS NULL", SOCIAL_FEED_PLATFORMS);
+        // Analytics-only snapshots must not delay the first published-feed import.
+        db_exec("UPDATE social_accounts SET sync_status='pending', last_attempt=NULL, next_sync=NULL
+            WHERE platform IN (" . db_in(SOCIAL_FEED_PLATFORMS) . ") AND is_active=1 AND run_id IS NULL
+            AND sync_status='ready' AND (locked_until IS NULL OR locked_until<?)
+            AND NOT EXISTS (SELECT 1 FROM social_published WHERE account_id=social_accounts.id)",
+            [...SOCIAL_FEED_PLATFORMS, now()]);
     });
 }
 
