@@ -722,7 +722,7 @@ function bindPublishedImages(root) {
   });
 }
 
-function publishedCards(items, detailed = false) {
+function publishedCards(items, detailed = false, expandable = false) {
   if (!items.length) return '<p class="empty">No imported posts for this date.</p>';
   return `<div class="published-cards">${items.map((item, i) => {
     const stats = ['views','likes','comments','replies','reposts'].filter(key => item.preview?.[key] != null);
@@ -731,7 +731,8 @@ function publishedCards(items, detailed = false) {
       <div class="published-card-body">
         <span class="eyebrow">${esc(item.label)}</span>
         <div class="published-feed-meta"><span>@${esc(item.handle)}</span><time datetime="${esc(item.published_at)}">${esc(item.published_label)}</time></div>
-        <p class="${detailed ? '' : 'published-excerpt'}">${esc(item.caption || 'Published post')}</p>
+        <p ${expandable ? `id="published-caption-${i}"` : ''} class="${!detailed || expandable ? 'published-excerpt' : ''}">${esc(item.caption || 'Published post')}</p>
+        ${expandable ? `<button type="button" class="published-caption-toggle" aria-expanded="false" aria-controls="published-caption-${i}" hidden>View more</button>` : ''}
         ${stats.length ? `<dl class="socialmetrics">${stats.map(key => `<div><dt>${key}</dt><dd>${metricNumber(item.preview[key])}</dd></div>`).join('')}</dl>` : ''}
         ${detailed ? `<a class="published-source" href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">Open original ↗</a>`
           : `<button data-published-item="${i}">View post →</button>`}
@@ -739,6 +740,21 @@ function publishedCards(items, detailed = false) {
     </article>`;
   }).join('')}</div>`;
 }
+
+function updatePublishedCaptionToggles() {
+  $$('.published-caption-toggle').forEach(button => {
+    const caption = document.getElementById(button.getAttribute('aria-controls'));
+    const previewHeight = parseFloat(getComputedStyle(caption).lineHeight) * 3;
+    button.hidden = caption.scrollHeight <= Math.ceil(previewHeight);
+    button.onclick = () => {
+      const expanded = caption.classList.toggle('published-excerpt') === false;
+      button.setAttribute('aria-expanded', String(expanded));
+      button.textContent = expanded ? 'View less' : 'View more';
+    };
+  });
+}
+
+window.addEventListener('resize', updatePublishedCaptionToggles);
 
 function openPublished(items, title) {
   const dialog = openDialog(`<div class="dlghead"><h2>${esc(title)}</h2><button type="button" class="iconbtn" data-close aria-label="Close">✕</button></div>
@@ -782,7 +798,7 @@ function renderPublishedDay(date, data, posts) {
     <h2 id="published-day-title" tabindex="-1">${esc(title)}</h2>
     <p class="muted small">${posts.length} published post${posts.length === 1 ? '' : 's'}</p>
     ${publishedPlatformFilters(data.platforms, counts)}
-    ${publishedCards(posts, true)}
+    ${publishedCards(posts, true, true)}
   </section>`;
   const dayOffset = offset => {
     const next = new Date(date + 'T12:00:00');
@@ -798,6 +814,7 @@ function renderPublishedDay(date, data, posts) {
   };
   bindPublishedPlatformFilters();
   bindPublishedImages($('.published-day-view'));
+  updatePublishedCaptionToggles();
 }
 
 async function renderPublishedCalendar() {

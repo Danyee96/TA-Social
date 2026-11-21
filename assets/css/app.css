@@ -245,6 +245,15 @@ button.primary:hover:not(:disabled), .btnlink.primary:hover {
 .published-card .socialmetrics dt { text-transform: capitalize; }
 .published-card .published-feed-meta { margin-top: 5px; }
 .published-excerpt { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+.published-card-body .published-caption-toggle {
+  margin: 0 0 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--teal);
+  font-weight: 650;
+}
+.published-caption-toggle:hover { text-decoration: underline; }
 .published-visual {
   position: relative; display: grid; place-items: center; aspect-ratio: 16 / 9; overflow: hidden;
   color: var(--text); font-size: 32px; font-weight: 850; background: radial-gradient(ellipse at top left, #264860, #08151e);
