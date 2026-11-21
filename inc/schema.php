@@ -7,7 +7,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/social.php';
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 /** Upgrades an existing install in place (run automatically on first request after an update). */
 function migrate(): void
@@ -29,7 +29,18 @@ function migrate(): void
         $insert = $d === 'sqlite' ? 'INSERT OR IGNORE' : 'INSERT IGNORE';
         db_exec("$insert INTO role_permissions (role_id, permission) SELECT id, ? FROM roles WHERE slug = 'admin'", ['socials.manage']);
     }
-    set_setting('schema_version', (string)SCHEMA_VERSION);
+    db_tx(function () {
+        // Give profiles without a snapshot one fresh attempt with the new X provider.
+        $changed = db_exec("UPDATE settings SET svalue=? WHERE skey='schema_version' AND svalue IN ('1','2','3')",
+            [(string)SCHEMA_VERSION]);
+        if ($changed) {
+            db_exec("UPDATE social_accounts SET sync_status='pending', last_attempt=NULL, next_sync=NULL, last_error=NULL
+                WHERE platform='x' AND last_synced IS NULL AND run_id IS NULL
+                AND sync_status IN ('pending','error') AND (locked_until IS NULL OR locked_until<?)", [now()]);
+        } elseif (setting('schema_version') === null) {
+            set_setting('schema_version', (string)SCHEMA_VERSION);
+        }
+    });
 }
 
 function schema_sql(string $driver): array
