@@ -6,7 +6,7 @@
 declare(strict_types=1);
 
 define('APP_ROOT', dirname(__DIR__));
-define('APP_VERSION', '1.4.4');
+define('APP_VERSION', '1.4.5');
 
 $configFile = APP_ROOT . '/config.php';
 if (!is_file($configFile)) {

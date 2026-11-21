@@ -152,10 +152,18 @@ function renderNav() {
 }
 
 function go(page, push = true) {
+  const feedDay = /^social-feed\/(\d{4}-\d{2}-\d{2})$/.exec(page);
+  if (feedDay) page = 'social-feed';
   if (page === 'settings') page = settingsPages.find(allowed);
   if (!PAGES[page] || PAGES[page].section || !allowed(page)) page = allowed('overview') ? 'overview' : 'tracking';
+  if (page === 'social-feed') {
+    const date = feedDay?.[1];
+    socialCalendar.day = date && localDate(new Date(date + 'T12:00:00')) === date ? date : '';
+    if (socialCalendar.day) socialCalendar.month = socialCalendar.day.slice(0, 7);
+  }
   S.page = page;
-  if (push && location.hash !== '#/' + page) history.pushState(null, '', '#/' + page);
+  const route = page === 'social-feed' && socialCalendar.day ? page + '/' + socialCalendar.day : page;
+  if (push && location.hash !== '#/' + route) history.pushState(null, '', '#/' + route);
   $('#sidebar').classList.remove('open');
   return render();
 }
@@ -642,7 +650,7 @@ function publishedFeedHTML(items) {
   </li>`).join('')}</ul>`;
 }
 
-const socialCalendar = { month: '', platform: 'all' };
+const socialCalendar = { month: '', day: '', platform: 'all' };
 const socialGlyph = { instagram: 'IG', x: '𝕏', youtube: '▶' };
 let todaySocialPlatform = 'all';
 
@@ -738,10 +746,64 @@ function openPublished(items, title) {
   bindPublishedImages(dialog);
 }
 
+function publishedPlatformFilters(platforms, counts = null) {
+  return `<div class="row published-filters" role="group" aria-label="Filter by platform">
+    ${Object.entries({all:'All platforms', ...platforms}).map(([key,label]) => `<button data-published-platform="${esc(key)}" aria-pressed="${key === socialCalendar.platform}">${esc(label)}${counts ? ` <span class="published-filter-count">${counts.get(key) ?? 0}</span>` : ''}</button>`).join('')}
+  </div>`;
+}
+
+function bindPublishedPlatformFilters() {
+  $$('[data-published-platform]').forEach(button => button.onclick = async () => {
+    socialCalendar.platform = button.dataset.publishedPlatform;
+    await refresh();
+    $(`[data-published-platform="${socialCalendar.platform}"]`)?.focus();
+  });
+}
+
+async function showPublishedDay(date) {
+  await go('social-feed/' + date);
+  $('#published-day-title')?.focus();
+}
+
+function renderPublishedDay(date, data, posts) {
+  const title = pretty(date, {dateStyle:'full'});
+  const counts = new Map();
+  for (const item of data.items) {
+    if (item.workspace_date !== date) continue;
+    counts.set('all', (counts.get('all') ?? 0) + 1);
+    counts.set(item.platform, (counts.get(item.platform) ?? 0) + 1);
+  }
+  $('#view').innerHTML = `<section class="published-day-view" ${data.configured ? 'data-social-poll' : ''}>
+    <div class="row between published-toolbar">
+      <button id="published-back">← Back to calendar</button>
+      <div class="row"><button id="published-prev-day" aria-label="Previous day">←</button>
+        <button id="published-open-today">Today</button><button id="published-next-day" aria-label="Next day">→</button></div>
+    </div>
+    <h2 id="published-day-title" tabindex="-1">${esc(title)}</h2>
+    <p class="muted small">${posts.length} published post${posts.length === 1 ? '' : 's'}</p>
+    ${publishedPlatformFilters(data.platforms, counts)}
+    ${publishedCards(posts, true)}
+  </section>`;
+  const dayOffset = offset => {
+    const next = new Date(date + 'T12:00:00');
+    next.setDate(next.getDate() + offset);
+    return showPublishedDay(localDate(next));
+  };
+  $('#published-prev-day').onclick = () => dayOffset(-1);
+  $('#published-next-day').onclick = () => dayOffset(1);
+  $('#published-open-today').onclick = () => showPublishedDay(data.today);
+  $('#published-back').onclick = async () => {
+    await go('social-feed');
+    $(`[data-published-day="${date}"]`)?.focus();
+  };
+  bindPublishedPlatformFilters();
+  bindPublishedImages($('.published-day-view'));
+}
+
 async function renderPublishedCalendar() {
-  const month = socialCalendar.month;
+  const {month, day} = socialCalendar;
   const d = await get('socials.calendar', month ? {month} : {});
-  if (S.page !== 'social-feed' || socialCalendar.month !== month) return;
+  if (S.page !== 'social-feed' || socialCalendar.month !== month || socialCalendar.day !== day) return;
   const first = new Date(d.month + '-01T12:00:00');
   const year = first.getFullYear(), monthIndex = first.getMonth();
   const days = new Date(year, monthIndex + 1, 0).getDate();
@@ -751,16 +813,18 @@ async function renderPublishedCalendar() {
     if (!grouped.has(item.workspace_date)) grouped.set(item.workspace_date, []);
     grouped.get(item.workspace_date).push(item);
   }
-  const platforms = {all:'All platforms', ...d.platforms};
+  if (day) {
+    renderPublishedDay(day, d, grouped.get(day) || []);
+    return;
+  }
   const monthLabel = first.toLocaleDateString('en-US', {month:'long', year:'numeric'});
   const cells = Array.from({length:days}, (_, i) => {
     const date = d.month + '-' + String(i + 1).padStart(2, '0');
     const posts = grouped.get(date) || [];
     const label = `${pretty(date, {dateStyle:'full'})}, ${posts.length} post${posts.length === 1 ? '' : 's'}`;
     const flags = `class="published-day ${date === d.today ? 'is-today' : ''}" ${date === d.today ? 'aria-current="date"' : ''}`;
-    if (!posts.length) return `<div ${flags}><span class="published-day-number">${i + 1}</span></div>`;
     return `<button ${flags} data-published-day="${date}" aria-label="${esc(label)}">
-      <span class="published-day-head"><span class="published-day-number">${i + 1}</span><span class="published-day-count">${posts.length}</span></span>
+      <span class="published-day-head"><span class="published-day-number">${i + 1}</span>${posts.length ? `<span class="published-day-count">${posts.length}</span>` : ''}</span>
       ${posts.slice(0, 2).map(item => `<span class="published-cell-post">${publishedVisual(item, true)}<span>${esc(item.caption || item.label)}</span></span>`).join('')}
       ${posts.length > 2 ? `<small>+${posts.length - 2} more</small>` : ''}
     </button>`;
@@ -770,9 +834,7 @@ async function renderPublishedCalendar() {
     <div class="row between published-toolbar"><h2>${esc(monthLabel)}</h2><div class="row">
       <button id="published-prev" aria-label="Previous month">←</button><button id="published-today">Today</button><button id="published-next" aria-label="Next month">→</button>
     </div></div>
-    <div class="row published-filters" role="group" aria-label="Filter by platform">
-      ${Object.entries(platforms).map(([key,label]) => `<button data-published-platform="${esc(key)}" aria-pressed="${key === socialCalendar.platform}">${esc(label)}</button>`).join('')}
-    </div>
+    ${publishedPlatformFilters(d.platforms)}
     <div class="published-calendar-grid">
       ${DOW.map(day => `<div class="published-weekday">${day}</div>`).join('')}
       ${blanks(first.getDay())}${cells}${blanks((7 - (first.getDay() + days) % 7) % 7)}
@@ -788,15 +850,8 @@ async function renderPublishedCalendar() {
   $('#published-prev').onclick = () => changeMonth(-1);
   $('#published-next').onclick = () => changeMonth(1);
   $('#published-today').onclick = () => { socialCalendar.month = ''; refresh(); };
-  $$('[data-published-platform]').forEach(button => button.onclick = async () => {
-    socialCalendar.platform = button.dataset.publishedPlatform;
-    await refresh();
-    $(`[data-published-platform="${socialCalendar.platform}"]`)?.focus();
-  });
-  $$('[data-published-day]').forEach(button => button.onclick = () => {
-    const date = button.dataset.publishedDay;
-    openPublished(grouped.get(date), pretty(date, {dateStyle:'full'}));
-  });
+  bindPublishedPlatformFilters();
+  $$('[data-published-day]').forEach(button => button.onclick = () => showPublishedDay(button.dataset.publishedDay));
 }
 
 function socialCards(accounts, manage = false, configured = false) {
