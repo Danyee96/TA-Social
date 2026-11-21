@@ -67,7 +67,7 @@ Overview cards (combined audience, month completion, today's checklist, past due
 
 Open **Socials → Link profile** as an Admin or Super Admin. Enter a public handle or profile URL for Instagram, YouTube, TikTok, X, or Facebook. Connected profiles appear in Socials and on the dashboard with followers or subscribers, recent growth, and supported post, like, and view counts. These are public counts reported by the provider. Manual counts remain available on the Audience page.
 
-Set the server environment variable `TA_SOCIAL_APIFY_TOKEN` or add an `apify` section to your private `config.php`:
+As Super Admin, open **Socials → Connect Apify** and enter your Apify API token. Profiles already linked in the workspace will sync automatically while an admin is viewing Socials or the dashboard. For server-managed configuration, set `TA_SOCIAL_APIFY_TOKEN` or add an `apify` section to your private `config.php`:
 
 ```php
 'apify' => [

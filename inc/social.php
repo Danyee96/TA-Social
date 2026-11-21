@@ -35,7 +35,10 @@ function social_schema(bool $sqlite): array
 function social_config(): array
 {
     $config = cfg('apify', []);
-    $config['token'] = trim((string)($config['token'] ?? '')) ?: (getenv('TA_SOCIAL_APIFY_TOKEN') ?: '');
+    $config['token'] = trim((string)($config['token'] ?? '')) ?: trim((string)getenv('TA_SOCIAL_APIFY_TOKEN'));
+    if ($config['token'] === '' && is_file(APP_ROOT . '/storage/apify.local.php')) {
+        $config['token'] = (string)require APP_ROOT . '/storage/apify.local.php';
+    }
     return $config;
 }
 
@@ -87,11 +90,11 @@ function social_identity(string $platform, string $raw): array
 }
 
 /** All provider traffic stays on a single fixed HTTPS host; tokens never enter URLs/logs. */
-function apify_request(string $method, string $path, ?array $body = null, array $query = []): array
+function apify_request(string $method, string $path, ?array $body = null, array $query = [], ?string $token = null): array
 {
-    $token = trim((string)(social_config()['token'] ?? ''));
+    $token ??= social_config()['token'];
     if ($token === '') throw new RuntimeException('Automatic stats are not configured. Ask your admin to connect Apify.');
-    if (!preg_match('~^/(acts/[A-Za-z0-9_\~.-]+/runs|actor-runs/[A-Za-z0-9_-]+(?:/abort)?|datasets/[A-Za-z0-9_-]+/items)$~', $path)) throw new RuntimeException('Invalid provider request.');
+    if (!preg_match('~^/(users/me|acts/[A-Za-z0-9_\~.-]+/runs|actor-runs/[A-Za-z0-9_-]+(?:/abort)?|datasets/[A-Za-z0-9_-]+/items)$~', $path)) throw new RuntimeException('Invalid provider request.');
     $url = 'https://api.apify.com/v2' . $path . ($query ? '?' . http_build_query($query) : '');
     // Injectable transport for isolated integration tests.
     if (isset($GLOBALS['social_test_transport'])) {
@@ -119,6 +122,30 @@ function apify_request(string $method, string $path, ?array $body = null, array 
     }
     if (!is_array($response)) throw new RuntimeException('The stats provider returned an invalid response.');
     return $response;
+}
+
+function social_connect_provider(string $token): void
+{
+    if (!preg_match('/^apify_api_[A-Za-z0-9_-]{10,200}$/D', $token)) {
+        throw new RuntimeException('Enter a valid Apify API token.');
+    }
+    $account = apify_request('GET', '/users/me', null, [], $token);
+    if (empty($account['data']['id'])) throw new RuntimeException('Apify could not verify this token.');
+
+    $dir = APP_ROOT . '/storage';
+    $file = $dir . '/apify.local.php';
+    $temp = $dir . '/apify-' . bin2hex(random_bytes(12)) . '.php';
+    $stream = @fopen($temp, 'x');
+    if ($stream === false) throw new RuntimeException('The server could not save the Apify token. Check storage permissions.');
+    try {
+        $contents = '<?php return ' . var_export($token, true) . ';' . PHP_EOL;
+        if (!@chmod($temp, 0600) || @fwrite($stream, $contents) !== strlen($contents) || !@fflush($stream) || !@rename($temp, $file)) {
+            throw new RuntimeException('The server could not save the Apify token. Check storage permissions.');
+        }
+    } finally {
+        fclose($stream);
+        if (is_file($temp)) @unlink($temp);
+    }
 }
 
 function social_actor_input(array $account): array
@@ -223,7 +250,10 @@ function social_collect(int $id): void
             throw new RuntimeException('The profile sync failed or timed out. A scheduled retry will follow.');
         }
         $dataset = (string)($run['defaultDatasetId'] ?? '');
-        if (!preg_match('/^[a-zA-Z0-9_-]+$/', $dataset)) throw new RuntimeException('The provider did not return stats.');
+        if (!preg_match('/^[a-zA-Z0-9_-]+$/', $dataset)) {
+            $terminal = true;
+            throw new RuntimeException('The provider did not return stats.');
+        }
         $rows = apify_request('GET', '/datasets/' . $dataset . '/items', null, ['clean'=>'true','limit'=>5]);
         try { $stats = social_parse($account, $rows); }
         catch (RuntimeException $e) { $terminal = true; throw $e; }
@@ -246,16 +276,27 @@ function social_collect(int $id): void
     } finally { db_exec('UPDATE social_accounts SET locked_until=NULL WHERE id=?', [$id]); }
 }
 
+function social_due(int $limit, bool $runs): array
+{
+    $condition = $runs
+        ? "run_id IS NOT NULL AND (sync_status='syncing' OR next_sync IS NULL OR next_sync<=?)"
+        : 'run_id IS NULL AND (next_sync IS NULL OR next_sync<=?) AND (last_attempt IS NULL OR last_attempt<=?)';
+    $params = [now(), now()];
+    if (!$runs) $params[] = social_time(-3600);
+    return db_all("SELECT id FROM social_accounts WHERE is_active=1 AND sync_status<>'archived'
+        AND (locked_until IS NULL OR locked_until<?) AND ($condition)
+        ORDER BY next_sync, id LIMIT " . max(1, min(100, $limit)), $params);
+}
+
 function social_tick(int $limit = 20): int
 {
     if (!social_enabled()) throw new RuntimeException('Apify token is not configured.');
-    $due = db_all("SELECT id, run_id FROM social_accounts
-        WHERE is_active=1 AND sync_status<>'archived'
-        AND (locked_until IS NULL OR locked_until<?)
-        AND (next_sync IS NULL OR next_sync<=? OR (run_id IS NOT NULL AND sync_status='syncing'))
-        ORDER BY last_attempt ASC LIMIT " . max(1, min(100, $limit)), [now(), now()]);
-    foreach ($due as $row) { if ($row['run_id']) social_collect((int)$row['id']); else social_start((int)$row['id']); }
-    return count($due);
+    $runs = social_due($limit, true);
+    $remaining = $limit - count($runs);
+    $starts = $remaining > 0 ? social_due($remaining, false) : [];
+    foreach ($runs as $row) social_collect((int)$row['id']);
+    foreach ($starts as $row) social_start((int)$row['id']);
+    return count($runs) + count($starts);
 }
 
 /** Public analytics projection. Internal provider job IDs stay server-side. */

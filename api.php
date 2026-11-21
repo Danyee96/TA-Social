@@ -213,6 +213,7 @@ $routes['overview'] = function () {
         'upcoming_count' => (int)db_val('SELECT COUNT(*) FROM posts WHERE done = 0 AND post_date > ? AND post_date <= ?', [$today, $week]),
         'metrics' => $metrics,
         'socials' => (can('metrics.view') || can('socials.manage')) ? social_dashboard_data() : [],
+        'socials_configured' => can('socials.manage') && social_enabled(),
         'activity' => can('activity.view') ? activity_rows(8, 0, []) : [],
         'week' => (function () use ($today) {
             [$ws, $we] = week_bounds($today);
@@ -720,6 +721,19 @@ $routes['socials.list'] = function () {
     ];
 };
 
+$routes['socials.connect'] = function () {
+    require_write();
+    if (!is_superadmin()) fail('Only the Super Admin can configure Apify.', 403);
+    if (social_enabled()) fail('Apify is already configured.', 409);
+    try {
+        social_connect_provider(str_in('token', 250));
+    } catch (RuntimeException $e) {
+        fail($e->getMessage());
+    }
+    log_activity('social.configure', 'social', null, 'Connected Apify for social analytics');
+    return [];
+};
+
 $routes['socials.add'] = function () {
     require_write();
     need('socials.manage');
@@ -783,17 +797,11 @@ $routes['socials.refresh'] = function () {
     return [];
 };
 
-/** Collect one already-started run per browser poll. Starting due runs belongs to cron. */
+/** Process one due profile while admins are viewing analytics. Cron handles unattended sync. */
 $routes['socials.poll'] = function () {
     require_write();
     need('socials.manage');
-    if (social_enabled()) {
-        $account = db_one("SELECT id FROM social_accounts WHERE is_active=1 AND sync_status='syncing'
-            AND run_id IS NOT NULL AND (locked_until IS NULL OR locked_until<?)
-            ORDER BY id LIMIT 1", [now()]);
-        if ($account) social_collect((int)$account['id']);
-    }
-    return [];
+    return ['processed' => social_enabled() ? social_tick(1) : 0];
 };
 
 /* ===== reports ===== */

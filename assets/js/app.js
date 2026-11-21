@@ -209,8 +209,9 @@ async function renderOverview() {
     <div class="card"><div class="muted">Past due</div><div class="big ${d.pastdue_count ? 'overdue' : ''}">${d.pastdue_count}</div><div class="statline">Uncompleted posts before today</div></div>
   </div>
   ${weekPlanHTML(d.week)}
-  ${canViewSocials() ? `<section class="section"><div class="row between"><h2>Connected social analytics</h2><button id="go-socials">${can('socials.manage') ? 'Manage profiles' : 'View Socials'} →</button></div>
-    ${d.socials.length ? socialCards(d.socials) : '<p class="muted">No social profiles linked yet.</p>'}</section>` : ''}
+  ${canViewSocials() ? `<section class="section" ${d.socials_configured && d.socials.length ? 'data-social-poll' : ''}><div class="row between"><h2>Connected social analytics</h2><button id="go-socials">${can('socials.manage') ? 'Manage profiles' : 'View Socials'} →</button></div>
+    ${can('socials.manage') && !d.socials_configured ? '<p class="notice">Connect Apify in Socials to load analytics for your linked profiles.</p>' : ''}
+    <div id="dashboard-social-cards">${d.socials.length ? socialCards(d.socials) : '<p class="muted">No social profiles linked yet.</p>'}</div></section>` : ''}
   <div class="section row between" style="margin-bottom:16px"><h2>Publishing platforms and manual counts</h2>${can('metrics.update') ? '<button id="metrics">Update audience counts</button>' : ''}</div>
   <div class="platforms">${plats.map(p => {
     const a = ts.filter(t => t.platform_id === p.id), now = m ? m.current[p.id] : null, prev = m ? m.previous[p.id] : null;
@@ -622,7 +623,7 @@ function socialCards(accounts, manage = false, configured = false) {
       ({pending:'Awaiting sync', syncing:'Syncing', ready:a.stale ? 'Update due' : 'Up to date', error:'Sync error'}[a.status] || 'Awaiting sync');
     const secondary = [['Posts / videos', a.posts], ['Likes', a.likes], ['Views', a.views]]
       .filter(([, value]) => value != null);
-    return `<article class="card" ${configured && a.status === 'syncing' ? 'data-social-syncing' : ''}>
+    return `<article class="card">
       <div class="row between"><span class="eyebrow">${esc(a.label)}</span><a href="${esc(a.url)}" target="_blank" rel="noopener noreferrer">Public profile ↗</a></div>
       <h3>${esc(a.name || '@' + a.handle)}</h3>
       <div class="big">${metricNumber(a.followers)}</div>
@@ -643,11 +644,38 @@ async function renderSocials() {
   const d = await get('socials.list');
   if (S.page !== 'socials') return;
   const manage = can('socials.manage');
+  const canConfigure = S.me.role.slug === 'superadmin';
   $('#view').innerHTML = `
-    <div class="row between"><h2>Connected profiles</h2>${manage ? '<button class="primary" id="link-social">Link profile</button>' : ''}</div>
-    ${!d.configured && manage ? '<p class="notice">Set the Apify token on the server to enable automatic sync. You can link profiles now.</p>' : ''}
-    ${d.accounts.length ? socialCards(d.accounts, manage, d.configured) : '<p class="empty">No social profiles linked yet.</p>'}`;
+    <div class="row between"><h2>Connected profiles</h2><div class="row">
+      ${!d.configured && canConfigure ? '<button id="connect-apify">Connect Apify</button>' : ''}
+      ${manage ? '<button class="primary" id="link-social">Link profile</button>' : ''}
+    </div></div>
+    ${!d.configured && manage ? `<p class="notice">${canConfigure ? 'Connect your Apify account to load analytics for profiles you have already linked.' : 'Ask the Super Admin to connect Apify to load analytics.'}</p>` : ''}
+    <div ${manage && d.configured && d.accounts.length ? 'data-social-poll' : ''}>
+      ${d.accounts.length ? socialCards(d.accounts, manage, d.configured) : '<p class="empty">No social profiles linked yet.</p>'}
+    </div>`;
   if (!manage) return;
+
+  if ($('#connect-apify')) $('#connect-apify').onclick = () => {
+    const dialog = openDialog(`<form><div class="dlghead"><h2>Connect Apify</h2>
+      <button type="button" class="iconbtn" data-close aria-label="Close">✕</button></div>
+      <label for="apify-token">Apify API token</label>
+      <input id="apify-token" name="token" type="password" required maxlength="250" autocomplete="off">
+      <div class="actions"><button type="button" data-close>Cancel</button><button class="primary" type="submit">Connect Apify</button></div></form>`);
+    const form = $('form', dialog);
+    form.onsubmit = async e => {
+      e.preventDefault();
+      const submit = $('button[type=submit]', form);
+      submit.disabled = true;
+      if (await act('socials.connect', {token: form.elements.token.value}, 'Apify connected')) {
+        form.reset();
+        dialog.close();
+        refresh();
+      } else {
+        submit.disabled = false;
+      }
+    };
+  };
 
   $('#link-social').onclick = () => {
     const dialog = openDialog(`<form><div class="dlghead"><h2>Link a social profile</h2>
@@ -992,14 +1020,22 @@ setInterval(() => {
   }
 }, 60000);
 
-// Collect jobs already started by a profile link or manual refresh.
+// Let open admin analytics screens start and collect due jobs without cron.
 setInterval(async () => {
-  if (S.page !== 'socials' || !can('socials.manage') || S.busy ||
+  const page = S.page;
+  if (!['socials', 'overview'].includes(page) || !can('socials.manage') || S.busy ||
       document.visibilityState !== 'visible' || $('dialog[open]') ||
-      !$('[data-social-syncing]')) return;
+      !$('[data-social-poll]')) return;
   try {
-    await post('socials.poll');
-    if (S.page === 'socials' && !$('dialog[open]')) await render();
+    const result = await post('socials.poll');
+    if (!result.processed || S.page !== page || $('dialog[open]')) return;
+    if (page === 'socials') {
+      await render();
+    } else {
+      const data = await get('socials.list');
+      const cards = $('#dashboard-social-cards');
+      if (S.page === page && cards && data.accounts.length) cards.innerHTML = socialCards(data.accounts);
+    }
   } catch (e) {
     // The next poll or cron pass can retry.
   }

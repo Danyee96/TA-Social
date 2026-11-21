@@ -1,4 +1,6 @@
 config.php
 storage/*.sqlite*
 storage/installed.lock
+storage/apify.local.php
+storage/apify-*
 .DS_Store
