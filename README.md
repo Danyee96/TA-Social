@@ -85,7 +85,7 @@ The sync requires PHP cURL, Apify credits, and actor access. Schedule the CLI wo
 */5 * * * * php /absolute/path/to/public_html/scripts/sync-social.php
 ```
 
-The worker starts due jobs and collects completed results. Admins can use **Sync now** any time to start a fresh sync or check an existing job. Unlinking a profile hides it and keeps its snapshots for later relinking. Keep the Apify token in server configuration.
+The worker starts due jobs and collects completed results. Admins can use **Sync now** to start a fresh sync whenever a profile is idle. Unlinking a profile hides it and keeps its snapshots for later relinking. Keep the Apify token in server configuration.
 
 ## Added
 * **Logins, roles and permissions.** There is a Super Admin, Admins manage the team, and custom roles are possible.

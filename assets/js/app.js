@@ -801,6 +801,7 @@ async function renderPublishedCalendar() {
 
 function socialCards(accounts, manage = false, configured = false) {
   return `<div class="platforms socialcards">${accounts.map(a => {
+    const syncing = a.status === 'syncing';
     const status = !configured && manage ? 'Setup required' :
       ({pending:'Awaiting sync', syncing:'Syncing', ready:a.stale ? 'Update due' : 'Up to date', error:'Sync error'}[a.status] || 'Awaiting sync');
     const secondary = [['Posts / videos', a.posts], ['Likes', a.likes], ['Views', a.views]]
@@ -815,7 +816,7 @@ function socialCards(accounts, manage = false, configured = false) {
       <p class="muted small">${a.last_synced ? 'Captured ' + esc(a.last_synced) : 'No snapshot yet'} · ${status}</p>
       ${manage && a.error ? `<p class="overdue small">${esc(a.error)}</p>` : ''}
       ${manage ? `<div class="row">
-        <button data-social-refresh="${a.id}" ${!configured ? 'disabled' : ''}>Sync now</button>
+        <button data-social-refresh="${a.id}" ${!configured || syncing ? 'disabled' : ''}>${syncing ? 'Syncing…' : 'Sync now'}</button>
         <button class="danger" data-social-remove="${a.id}">Unlink</button>
       </div>` : ''}
     </article>`;
@@ -889,8 +890,12 @@ async function renderSocials() {
   };
   $$('[data-social-refresh]').forEach(button => button.onclick = async () => {
     button.disabled = true;
+    button.textContent = 'Syncing…';
     if (await act('socials.refresh', {id: Number(button.dataset.socialRefresh)})) refresh();
-    else button.disabled = false;
+    else {
+      button.disabled = false;
+      button.textContent = 'Sync now';
+    }
   });
   $$('[data-social-remove]').forEach(button => button.onclick = async () => {
     if (!await confirmBox('Unlink profile?', 'The profile will be removed from analytics. Linking it again restores its saved history.', 'Unlink')) return;
