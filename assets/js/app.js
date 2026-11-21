@@ -120,7 +120,8 @@ const PAGES = {
   tracking: { label: 'Content tracking', ic: '▦', perm: 'content.view', title: 'Our content. Our calendar.', sub: 'Every platform, every post, one checklist.' },
   mine: { label: 'My work', ic: '✓', perm: 'content.view', title: 'My work.', sub: 'Everything assigned to you — overdue first.' },
   reports: { label: 'Reports', ic: '◔', perm: 'reports.view', title: 'How we\'re doing.', sub: 'Completion, consistency and team performance by month.' },
-  socials: { label: 'Socials', ic: '◎', perm: ['metrics.view', 'socials.manage'], title: 'Socials', sub: 'Public profile analytics and audience growth.' },
+  socials: { label: 'Overview', ic: '◎', perm: ['metrics.view', 'socials.manage'], title: 'Social Overview', sub: 'Today’s published posts and connected profile analytics.' },
+  'social-feed': { label: 'Published Feed', ic: '▦', perm: ['metrics.view', 'socials.manage'], title: 'Published Feed', sub: 'Browse imported posts by publication date.' },
   audience: { label: 'Audience', ic: '↗', perm: 'metrics.view', title: 'Our audience.', sub: 'Manual follower snapshots and growth over time.' },
   sec: { section: 'Workspace' },
   team: { label: 'Team', ic: '☺', perm: 'users.view', title: 'Our team.', sub: 'Who has access, and what they can do.' },
@@ -131,38 +132,50 @@ const PAGES = {
   profile: { label: 'My profile', ic: '◎', perm: null, title: 'My profile.', sub: 'Your details and password.' },
 };
 const allowed = k => { const p = PAGES[k]?.perm; return p === null || (Array.isArray(p) ? p.some(can) : can(p)); };
+const settingsPages = ['team', 'roles', 'platforms', 'data', 'profile'];
 
 function renderNav() {
   let html = '';
   for (const [k, v] of Object.entries(PAGES)) {
     if (v.section) { html += `<div class="navsec">${v.section}</div>`; continue; }
-    if (k === 'profile' || !allowed(k)) continue;
-    html += `<button data-page="${k}" class="${S.page === k ? 'active' : ''}"><span class="ic">${v.ic}</span>${v.label}${k === 'mine' && S.myOverdue ? `<span class="count">${S.myOverdue}</span>` : ''}</button>`;
+    if (k === settingsPages[0]) {
+      const active = settingsPages.includes(S.page);
+      html += `<button data-page="settings" ${active ? 'class="active" aria-current="page"' : ''}><span class="ic">⚙</span>Settings</button>`;
+    }
+    if (settingsPages.includes(k) || !allowed(k)) continue;
+    if (k === 'socials') html += '<div class="navsec social-nav-heading">Socials</div>';
+    html += `<button data-page="${k}" class="${['socials','social-feed'].includes(k) ? 'social-nav-child' : ''} ${S.page === k ? 'active' : ''}" ${S.page === k ? 'aria-current="page"' : ''}><span class="ic">${v.ic}</span>${v.label}${k === 'mine' && S.myOverdue ? `<span class="count">${S.myOverdue}</span>` : ''}</button>`;
   }
   $('#nav').innerHTML = html;
   $$('#nav [data-page]').forEach(b => b.onclick = () => go(b.dataset.page));
-  $('#mecard').innerHTML = `${avatar(S.me)}<div><b>${esc(S.me.name)}</b><small>${esc(S.me.role.name)}</small></div>`;
-  $('#mecard').onclick = () => go('profile');
   $('#add').classList.toggle('hidden', !can('content.create'));
 }
 
 function go(page, push = true) {
+  if (page === 'settings') page = settingsPages.find(allowed);
   if (!PAGES[page] || PAGES[page].section || !allowed(page)) page = allowed('overview') ? 'overview' : 'tracking';
   S.page = page;
   if (push && location.hash !== '#/' + page) history.pushState(null, '', '#/' + page);
   $('#sidebar').classList.remove('open');
-  render();
+  return render();
 }
 window.addEventListener('popstate', () => go(location.hash.replace('#/', '') || 'overview', false));
 
 async function render() {
   const v = PAGES[S.page];
-  $('#heading').textContent = v.title;
+  const inSettings = settingsPages.includes(S.page);
+  $('#heading').textContent = inSettings ? 'Settings' : v.title;
   $('#subtitle').textContent = v.sub;
   document.title = `${v.label} · ${S.workspace.name} · Social Command`;
   renderNav();
+  const settingsNav = $('#settings-nav');
+  settingsNav.hidden = !inSettings;
+  settingsNav.innerHTML = inSettings ? settingsPages.filter(allowed).map(page =>
+    `<button data-settings-page="${page}" ${S.page === page ? 'aria-current="page"' : ''}>${esc(PAGES[page].label)}</button>`
+  ).join('') : '';
+  $$('[data-settings-page]', settingsNav).forEach(button => button.onclick = () => go(button.dataset.settingsPage));
   try {
-    await ({ overview: renderOverview, tracking: renderTracking, mine: renderMine, reports: renderReports, socials: renderSocials, audience: renderAudience, team: renderTeam,
+    await ({ overview: renderOverview, tracking: renderTracking, mine: renderMine, reports: renderReports, socials: renderSocials, 'social-feed': renderPublishedCalendar, audience: renderAudience, team: renderTeam,
       roles: renderRoles, platforms: renderPlatforms, activity: renderActivity, data: renderData, profile: renderProfile })[S.page]();
   } catch (e) {
     $('#view').innerHTML = `<div class="notice warn">Couldn't load this page: ${esc(e.message)} <button onclick="render()">Retry</button></div>`;
@@ -212,6 +225,8 @@ async function renderOverview() {
   ${canViewSocials() ? `<section class="section" ${d.socials_configured && d.socials.length ? 'data-social-poll' : ''}><div class="row between"><h2>Connected social analytics</h2><button id="go-socials">${can('socials.manage') ? 'Manage profiles' : 'View Socials'} →</button></div>
     ${can('socials.manage') && !d.socials_configured ? '<p class="notice">Connect Apify in Socials to load analytics for your linked profiles.</p>' : ''}
     <div id="dashboard-social-cards">${d.socials.length ? socialCards(d.socials) : '<p class="muted">No social profiles linked yet.</p>'}</div></section>` : ''}
+  ${canViewSocials() ? `<section class="section card"><div class="row between"><h2>Recent uploads</h2><button id="go-published">View published feed →</button></div>
+    <div id="dashboard-published-feed">${publishedFeedHTML(d.published_feed)}</div></section>` : ''}
   <div class="section row between" style="margin-bottom:16px"><h2>Publishing platforms and manual counts</h2>${can('metrics.update') ? '<button id="metrics">Update audience counts</button>' : ''}</div>
   <div class="platforms">${plats.map(p => {
     const a = ts.filter(t => t.platform_id === p.id), now = m ? m.current[p.id] : null, prev = m ? m.previous[p.id] : null;
@@ -239,6 +254,7 @@ async function renderOverview() {
   $('#jump') && ($('#jump').onclick = () => go('tracking'));
   $('#metrics') && ($('#metrics').onclick = openMetrics);
   $('#go-socials') && ($('#go-socials').onclick = () => go('socials'));
+  $('#go-published') && ($('#go-published').onclick = () => go('social-feed'));
   $('#build') && ($('#build').onclick = () => { go('tracking'); openPlan(); });
   $('#todaybutton') && ($('#todaybutton').onclick = () => { S.current = new Date(today + 'T12:00:00'); S.current.setDate(1); S.expanded = today; go('tracking'); });
   $('#gomine').onclick = () => go('mine');
@@ -617,6 +633,167 @@ function growthHTML(m) {
 }
 const canViewSocials = () => can('metrics.view') || can('socials.manage');
 
+function publishedFeedHTML(items) {
+  if (!items.length) return '<p class="muted">Recent posts from linked Instagram, X, and YouTube profiles appear here after syncing.</p>';
+  return `<ul class="published-feed">${items.map(item => `<li>
+    <div class="published-feed-meta"><span class="eyebrow">${esc(item.label)}</span><span>@${esc(item.handle)}</span>
+      <time datetime="${esc(item.published_at)}">${esc(item.published_label)}</time></div>
+    <a href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">${esc(item.caption || 'View post')} ↗</a>
+  </li>`).join('')}</ul>`;
+}
+
+const socialCalendar = { month: '', platform: 'all' };
+const socialGlyph = { instagram: 'IG', x: '𝕏', youtube: '▶' };
+let todaySocialPlatform = 'all';
+
+function bindTodaySocialTabs(data) {
+  const root = $('.published-today');
+  const list = $('[role=tablist]', root);
+  const panel = $('#today-social-posts', root);
+  const platforms = new Map([['all', 'All platforms']]);
+  data.accounts.forEach(account => {
+    if (Object.hasOwn(socialGlyph, account.platform)) platforms.set(account.platform, account.label);
+  });
+  if (!platforms.has(todaySocialPlatform)) todaySocialPlatform = 'all';
+  list.innerHTML = [...platforms].map(([key, label]) => {
+    const total = key === 'all' ? data.today_published.length : data.today_published.filter(item => item.platform === key).length;
+    return `<button type="button" role="tab" id="today-social-${key}" data-today-platform="${key}" aria-controls="today-social-posts">
+      ${esc(label)} <span>${total}</span></button>`;
+  }).join('');
+  const tabs = $$('[role=tab]', list);
+  const select = key => {
+    todaySocialPlatform = key;
+    const items = key === 'all' ? data.today_published : data.today_published.filter(item => item.platform === key);
+    tabs.forEach(tab => {
+      const active = tab.dataset.todayPlatform === key;
+      tab.setAttribute('aria-selected', active);
+      tab.tabIndex = active ? 0 : -1;
+    });
+    panel.setAttribute('aria-labelledby', 'today-social-' + key);
+    panel.innerHTML = items.length || key === 'all' ? publishedCards(items) : `<p class="empty">No ${esc(platforms.get(key))} posts imported for today.</p>`;
+    bindPublishedImages(panel);
+    $$('[data-published-item]', panel).forEach(button => button.onclick = () => {
+      const item = items[Number(button.dataset.publishedItem)];
+      openPublished([item], item.label + ' post');
+    });
+  };
+  list.onclick = e => {
+    const tab = e.target.closest('[role=tab]');
+    if (tab) select(tab.dataset.todayPlatform);
+  };
+  list.onkeydown = e => {
+    const index = tabs.indexOf(e.target);
+    if (index < 0) return;
+    const next = {ArrowRight: (index + 1) % tabs.length, ArrowLeft: (index + tabs.length - 1) % tabs.length,
+      Home: 0, End: tabs.length - 1}[e.key];
+    if (next == null) return;
+    e.preventDefault();
+    tabs[next].focus();
+    select(tabs[next].dataset.todayPlatform);
+  };
+  select(todaySocialPlatform);
+}
+
+function publishedVisual(item, compact = false) {
+  return `<span class="published-visual ${compact ? 'mini' : ''}" data-platform="${esc(item.platform)}">
+    <span aria-hidden="true">${socialGlyph[item.platform] || '●'}</span>
+    ${item.preview?.thumbnail ? `<img src="${esc(item.preview.thumbnail)}" loading="lazy" referrerpolicy="no-referrer" alt="">` : ''}
+  </span>`;
+}
+
+function bindPublishedImages(root) {
+  $$('img', root).forEach(img => {
+    const hide = () => { img.hidden = true; };
+    img.addEventListener('error', hide, {once:true});
+    if (img.complete && !img.naturalWidth) hide();
+  });
+}
+
+function publishedCards(items, detailed = false) {
+  if (!items.length) return '<p class="empty">No imported posts for this date.</p>';
+  return `<div class="published-cards">${items.map((item, i) => {
+    const stats = ['views','likes','comments','replies','reposts'].filter(key => item.preview?.[key] != null);
+    return `<article class="published-card">
+      ${publishedVisual(item)}
+      <div class="published-card-body">
+        <span class="eyebrow">${esc(item.label)}</span>
+        <div class="published-feed-meta"><span>@${esc(item.handle)}</span><time datetime="${esc(item.published_at)}">${esc(item.published_label)}</time></div>
+        <p class="${detailed ? '' : 'published-excerpt'}">${esc(item.caption || 'Published post')}</p>
+        ${stats.length ? `<dl class="socialmetrics">${stats.map(key => `<div><dt>${key}</dt><dd>${metricNumber(item.preview[key])}</dd></div>`).join('')}</dl>` : ''}
+        ${detailed ? `<a class="published-source" href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">Open original ↗</a>`
+          : `<button data-published-item="${i}">View post →</button>`}
+      </div>
+    </article>`;
+  }).join('')}</div>`;
+}
+
+function openPublished(items, title) {
+  const dialog = openDialog(`<div class="dlghead"><h2>${esc(title)}</h2><button type="button" class="iconbtn" data-close aria-label="Close">✕</button></div>
+    ${publishedCards(items, true)}`, {cls:'wide published-dialog'});
+  bindPublishedImages(dialog);
+}
+
+async function renderPublishedCalendar() {
+  const month = socialCalendar.month;
+  const d = await get('socials.calendar', month ? {month} : {});
+  if (S.page !== 'social-feed' || socialCalendar.month !== month) return;
+  const first = new Date(d.month + '-01T12:00:00');
+  const year = first.getFullYear(), monthIndex = first.getMonth();
+  const days = new Date(year, monthIndex + 1, 0).getDate();
+  const grouped = new Map();
+  for (const item of d.items) {
+    if (socialCalendar.platform !== 'all' && item.platform !== socialCalendar.platform) continue;
+    if (!grouped.has(item.workspace_date)) grouped.set(item.workspace_date, []);
+    grouped.get(item.workspace_date).push(item);
+  }
+  const platforms = {all:'All platforms', ...d.platforms};
+  const monthLabel = first.toLocaleDateString('en-US', {month:'long', year:'numeric'});
+  const cells = Array.from({length:days}, (_, i) => {
+    const date = d.month + '-' + String(i + 1).padStart(2, '0');
+    const posts = grouped.get(date) || [];
+    const label = `${pretty(date, {dateStyle:'full'})}, ${posts.length} post${posts.length === 1 ? '' : 's'}`;
+    const flags = `class="published-day ${date === d.today ? 'is-today' : ''}" ${date === d.today ? 'aria-current="date"' : ''}`;
+    if (!posts.length) return `<div ${flags}><span class="published-day-number">${i + 1}</span></div>`;
+    return `<button ${flags} data-published-day="${date}" aria-label="${esc(label)}">
+      <span class="published-day-head"><span class="published-day-number">${i + 1}</span><span class="published-day-count">${posts.length}</span></span>
+      ${posts.slice(0, 2).map(item => `<span class="published-cell-post">${publishedVisual(item, true)}<span>${esc(item.caption || item.label)}</span></span>`).join('')}
+      ${posts.length > 2 ? `<small>+${posts.length - 2} more</small>` : ''}
+    </button>`;
+  }).join('');
+  const blanks = n => '<span class="published-day blank" aria-hidden="true"></span>'.repeat(n);
+  $('#view').innerHTML = `<section class="card published-calendar" ${d.configured ? 'data-social-poll' : ''}>
+    <div class="row between published-toolbar"><h2>${esc(monthLabel)}</h2><div class="row">
+      <button id="published-prev" aria-label="Previous month">←</button><button id="published-today">Today</button><button id="published-next" aria-label="Next month">→</button>
+    </div></div>
+    <div class="row published-filters" role="group" aria-label="Filter by platform">
+      ${Object.entries(platforms).map(([key,label]) => `<button data-published-platform="${esc(key)}" aria-pressed="${key === socialCalendar.platform}">${esc(label)}</button>`).join('')}
+    </div>
+    <div class="published-calendar-grid">
+      ${DOW.map(day => `<div class="published-weekday">${day}</div>`).join('')}
+      ${blanks(first.getDay())}${cells}${blanks((7 - (first.getDay() + days) % 7) % 7)}
+    </div>
+    ${grouped.size ? '' : '<p class="muted small">No imported posts this month for the selected platform.</p>'}
+  </section>`;
+  bindPublishedImages($('#view'));
+  const changeMonth = offset => {
+    first.setMonth(first.getMonth() + offset);
+    socialCalendar.month = localDate(first).slice(0, 7);
+    refresh();
+  };
+  $('#published-prev').onclick = () => changeMonth(-1);
+  $('#published-next').onclick = () => changeMonth(1);
+  $('#published-today').onclick = () => { socialCalendar.month = ''; refresh(); };
+  $$('[data-published-platform]').forEach(button => button.onclick = async () => {
+    socialCalendar.platform = button.dataset.publishedPlatform;
+    await refresh();
+    $(`[data-published-platform="${socialCalendar.platform}"]`)?.focus();
+  });
+  $$('[data-published-day]').forEach(button => button.onclick = () => {
+    const date = button.dataset.publishedDay;
+    openPublished(grouped.get(date), pretty(date, {dateStyle:'full'}));
+  });
+}
+
 function socialCards(accounts, manage = false, configured = false) {
   return `<div class="platforms socialcards">${accounts.map(a => {
     const status = !configured && manage ? 'Setup required' :
@@ -653,7 +830,15 @@ async function renderSocials() {
     ${!d.configured && manage ? `<p class="notice">${canConfigure ? 'Connect your Apify account to load analytics for profiles you have already linked.' : 'Ask the Super Admin to connect Apify to load analytics.'}</p>` : ''}
     <div ${manage && d.configured && d.accounts.length ? 'data-social-poll' : ''}>
       ${d.accounts.length ? socialCards(d.accounts, manage, d.configured) : '<p class="empty">No social profiles linked yet.</p>'}
-    </div>`;
+    </div>
+    <section class="section published-today">
+      <div class="row between"><div><h2>Today’s posts <span class="weeklabel">${pretty(d.today, {dateStyle:'long'})}</span></h2></div>
+        <button id="social-calendar-link">Open published calendar →</button></div>
+      <div class="today-social-tabs" role="tablist" aria-label="Today’s posts by platform"></div>
+      <div id="today-social-posts" role="tabpanel" tabindex="0"></div>
+    </section>`;
+  $('#social-calendar-link').onclick = () => go('social-feed');
+  bindTodaySocialTabs(d);
   if (!manage) return;
 
   if ($('#connect-apify')) $('#connect-apify').onclick = () => {
@@ -1015,7 +1200,7 @@ setInterval(() => {
   const newToday = localDate(new Date());
   if (newToday !== today) today = newToday;
   if (document.visibilityState === 'visible' && !document.querySelector('dialog[open]') && !S.busy && !$('.searchresults')
-    && ['overview', 'tracking', 'mine', 'socials'].includes(S.page) && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) {
+    && ['overview', 'tracking', 'mine', 'socials', 'social-feed'].includes(S.page) && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) {
     const y = window.scrollY; render().then(() => window.scrollTo(0, y));
   }
 }, 60000);
@@ -1023,18 +1208,21 @@ setInterval(() => {
 // Let open admin analytics screens start and collect due jobs without cron.
 setInterval(async () => {
   const page = S.page;
-  if (!['socials', 'overview'].includes(page) || !can('socials.manage') || S.busy ||
+  if (!['socials', 'social-feed', 'overview'].includes(page) || !can('socials.manage') || S.busy ||
       document.visibilityState !== 'visible' || $('dialog[open]') ||
       !$('[data-social-poll]')) return;
   try {
     const result = await post('socials.poll');
     if (!result.processed || S.page !== page || $('dialog[open]')) return;
-    if (page === 'socials') {
+    if (page !== 'overview') {
       await render();
     } else {
       const data = await get('socials.list');
       const cards = $('#dashboard-social-cards');
-      if (S.page === page && cards && data.accounts.length) cards.innerHTML = socialCards(data.accounts);
+      if (S.page === page && cards) {
+        if (data.accounts.length) cards.innerHTML = socialCards(data.accounts);
+        $('#dashboard-published-feed').innerHTML = publishedFeedHTML(data.published_feed.slice(0, 6));
+      }
     }
   } catch (e) {
     // The next poll or cron pass can retry.

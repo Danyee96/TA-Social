@@ -28,8 +28,6 @@ $ws = setting('workspace_name', 'TA Toolkit');
   <div class="eyebrow">Social Command</div>
   <nav class="nav" id="nav" aria-label="Main"></nav>
   <div class="asidefoot">
-    <div class="me" id="mecard"></div>
-    <span class="accent">●</span> Our content, in one place<br>Plan. Publish. Check it off.
     <form method="post" action="logout.php" style="margin-top:12px">
       <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
       <button class="wide">Sign out</button>
@@ -50,6 +48,7 @@ $ws = setting('workspace_name', 'TA Toolkit');
       <button class="primary" id="add">+ Add content</button>
     </div>
   </header>
+  <nav class="settings-nav" id="settings-nav" aria-label="Settings" hidden></nav>
   <section id="view" aria-live="polite"><div class="empty">Loading…</div></section>
   <div class="footnote">Everything is saved to the shared workspace database. The whole team sees the same calendar.</div>
 </main>

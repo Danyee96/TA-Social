@@ -213,6 +213,7 @@ $routes['overview'] = function () {
         'upcoming_count' => (int)db_val('SELECT COUNT(*) FROM posts WHERE done = 0 AND post_date > ? AND post_date <= ?', [$today, $week]),
         'metrics' => $metrics,
         'socials' => (can('metrics.view') || can('socials.manage')) ? social_dashboard_data() : [],
+        'published_feed' => (can('metrics.view') || can('socials.manage')) ? social_published_feed(6) : [],
         'socials_configured' => can('socials.manage') && social_enabled(),
         'activity' => can('activity.view') ? activity_rows(8, 0, []) : [],
         'week' => (function () use ($today) {
@@ -716,8 +717,26 @@ $routes['socials.list'] = function () {
     if (!can('metrics.view') && !can('socials.manage')) fail('No access.', 403);
     return [
         'accounts' => social_dashboard_data(),
+        'published_feed' => social_published_feed(60),
+        'today' => date('Y-m-d'),
+        'today_published' => social_published_feed(null, date('Y-m-d'), date('Y-m-d', strtotime('+1 day'))),
         'configured' => social_enabled(),
         'platforms' => array_map(fn($platform) => $platform['label'], SOCIAL_PLATFORMS),
+    ];
+};
+
+$routes['socials.calendar'] = function () {
+    if (!can('metrics.view') && !can('socials.manage')) fail('No access.', 403);
+    $month = (string)in('month', date('Y-m'));
+    if (!valid_month($month)) fail('Choose a valid month.');
+    $from = $month . '-01';
+    $until = (new DateTimeImmutable($from))->modify('first day of next month')->format('Y-m-d');
+    return [
+        'month' => $month,
+        'today' => date('Y-m-d'),
+        'items' => social_published_feed(null, $from, $until),
+        'configured' => social_enabled(),
+        'platforms' => array_map(fn($key) => SOCIAL_PLATFORMS[$key]['label'], array_combine(SOCIAL_FEED_PLATFORMS, SOCIAL_FEED_PLATFORMS)),
     ];
 };
 
